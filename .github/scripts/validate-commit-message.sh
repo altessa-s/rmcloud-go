@@ -51,7 +51,7 @@ agent='(claude|codex|chatgpt|copilot|gemini|anthropic|openai|ai|agent|llm)'
 word_end='([^[:alnum:]_]|$)'
 attribution="(^|[^[:alnum:]_])(generated|written|created|assisted|implemented)[[:space:]-]+(by|with|using)[[:space:]]+([^[:space:]]+[[:space:]]+){0,3}$agent$word_end"
 attribution+="|co-authored-by:([^<]*[^[:alnum:]_])?$agent$word_end"
-attribution+='|noreply@anthropic\.com|^[[:space:]]*(agent|ai assistance)[[:space:]]*:'
+attribution+='|^[[:space:]]*(agent|ai assistance)[[:space:]]*:'
 # Reports are looked for in the body only: a subject such as "test: add
 # benchmarks" is a commit type, not a report heading.
 body=""
