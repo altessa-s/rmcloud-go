@@ -208,22 +208,38 @@ rmcloud (facade) ──► internal/wiring ──► internal/app/*     ──�
 An arrow is an import. No use case imports an adapter and no adapter imports a use case; the composition root hands each use case its adapters
 through the ports.
 
-| Package | Layer | Role |
-|---|---|---|
-| `rmcloud` | facade | Reads the options, calls `wiring.Build`, and holds the use cases only as ports. Imports nothing internal but `domain`, `port`, and `wiring`. |
-| `internal/domain` | entities | The protocol's types: index parsing and serialization, hashes, endpoints, claims, the closed error set and its HTTP status mapping. No I/O, no logging, no network. |
-| `internal/port` | ports | Driven ports (HTTP exchange, socket, secret store, files, hosts, tokens), the use cases' input ports (`SyncStore`, `Account`, `NotificationStream`), and the notification output (`Event`, `Signal`). Contracts only. Time is go-atlas-core's `clock.Clock`. |
-| `internal/app/auth` | use case | Device registration and the user-token lifecycle. |
-| `internal/app/syncstore` | use case | Sync reads and writes. |
-| `internal/app/notify` | use case | The notification stream: reconnects, keepalive, parsing. |
-| `internal/app/discovery` | use case | Host choice: region, discovery, demotion. |
-| `internal/app/retry` | use case | Which protocol errors repeat, on go-atlas-core's retry loop. |
-| `internal/adapter/httpapi` | adapter | HTTP on go-atlas-net with go-tlsutils TLS, the redirect policy, the wire log. |
-| `internal/adapter/ws` | adapter | The WebSocket dialer. |
-| `internal/adapter/fs` | adapter | Local files and the macOS version for the User-Agent. |
-| `internal/adapter/neterr` | adapter | Names a network failure as a protocol error, for httpapi and ws. |
-| `internal/wiring` | composition root | The one package that knows every adapter and use case and connects them. |
-| `internal/porttest`, `internal/domaintest` | tests | Doubles of the ports and protocol-error comparison. |
+**Facade**
+
+- `rmcloud` — reads the options, calls `wiring.Build`, and holds the use cases only as ports. Imports nothing internal but
+  `domain`, `port` and `wiring`.
+
+**Entities and ports**
+
+- `internal/domain` — the protocol's types: index parsing and serialization, hashes, endpoints, claims, the closed error set and its
+  HTTP status mapping. No I/O, no logging, no network.
+- `internal/port` — contracts only: the driven ports (HTTP exchange, socket, secret store, files, hosts, tokens), the use cases' input
+  ports (`SyncStore`, `Account`, `NotificationStream`) and the notification output (`Event`, `Signal`). Time is go-atlas-core's
+  `clock.Clock`.
+
+**Use cases**
+
+- `internal/app/auth` — device registration and the user-token lifecycle.
+- `internal/app/syncstore` — sync reads and writes.
+- `internal/app/notify` — the notification stream: reconnects, keepalive, parsing.
+- `internal/app/discovery` — host choice: region, discovery, demotion.
+- `internal/app/retry` — which protocol errors repeat, on go-atlas-core's retry loop.
+
+**Adapters**
+
+- `internal/adapter/httpapi` — HTTP on go-atlas-net with go-tlsutils TLS, the redirect policy, the wire log.
+- `internal/adapter/ws` — the WebSocket dialer.
+- `internal/adapter/fs` — local files and the macOS version for the User-Agent.
+- `internal/adapter/neterr` — names a network failure as a protocol error, for `httpapi` and `ws`.
+
+**Composition root and tests**
+
+- `internal/wiring` — the one package that knows every adapter and use case and connects them.
+- `internal/porttest`, `internal/domaintest` — doubles of the ports and protocol-error comparison.
 
 The rules are enforced twice. `architecture_test.go` checks each package's imports, keeps go-atlas-net and go-tlsutils out of `domain`, `port`,
 and the use cases, and holds the facade to `domain`, `port`, and `wiring`. `depguard` in `.golangci.yml` keeps the same lines and the test
