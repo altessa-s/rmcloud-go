@@ -1,0 +1,36 @@
+# Commit Scopes for rmcloud-go
+# Use these scopes in conventional commits: type(scope): description
+# The scope is optional: omit it for repository-wide changes. Never use `root`.
+# Only the first word of a non-comment line is a scope.
+# Example: fix(auth): bound the user-token exchange with a deadline
+
+# Repository scopes
+deps                        # Dependency updates (Dependabot writes build(deps): bump ...)
+README                      # Root README
+docs                        # Documentation
+
+# Public package
+client                      # rmcloud facade: Client and its options
+errors                      # The closed set of protocol errors
+
+# Protocol (internal)
+domain                      # Pure types: index, hashes, endpoints, errors
+port                        # Contracts the protocol asks of its host
+auth                        # Device and user tokens
+syncstore                   # Sync store reads and writes
+notify                      # Notification stream
+discovery                   # Host resolution and discovery
+retry                       # Retry policy
+
+# Adapters (internal)
+httpapi                     # HTTP on go-atlas-net: transport and discovery client
+ws                          # WebSocket dialer
+neterr                      # Network failures named as protocol errors
+wiring                      # Wires the adapters into the use cases
+fs                          # Local files, host version
+porttest                    # Doubles of the ports
+domaintest                  # Protocol-error comparison for tests
+
+# Tooling
+devtools                    # Development tool dependencies
+ci                          # GitHub Actions workflows and scripts

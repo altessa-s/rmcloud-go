@@ -1,0 +1,12 @@
+# gitleaks configuration for rmcloud-go (full-history scans and the CI gate).
+#
+# Real secrets must NEVER be allowlisted here — rotate and rewrite history
+# instead. Allowlist only findings verified as synthetic (test fixtures that
+# exercise key redaction, documentation placeholders), and keep entries narrow
+# (exact values or single directories), never whole file classes like
+# `*_test.go`.
+
+title = "rmcloud-go"
+
+[extend]
+useDefault = true

@@ -1,0 +1,25 @@
+# Coverage gate for the protocol packages.
+#
+# Enforced by .github/scripts/coverage-gate.sh. A package with no statements
+# yet is reported as skipped rather than as 0%.
+#
+# port is absent: it declares interfaces only. porttest and domaintest are
+# test doubles and helpers.
+# The root package is a facade over these and is exercised end to end.
+# wiring is the composition root; its tests build every configuration and
+# check where each call goes.
+
+threshold: 90.0
+
+packages:
+  - internal/domain
+  - internal/adapter/fs
+  - internal/adapter/httpapi
+  - internal/adapter/neterr
+  - internal/adapter/ws
+  - internal/app/auth
+  - internal/app/discovery
+  - internal/app/notify
+  - internal/app/retry
+  - internal/app/syncstore
+  - internal/wiring

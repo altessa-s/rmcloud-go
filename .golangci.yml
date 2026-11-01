@@ -1,0 +1,260 @@
+version: "2"
+
+run:
+  timeout: 5m
+  # Lint the integration tests too; they build only with this tag.
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - dogsled
+    - errcheck
+    - prealloc
+    - mnd
+    - unconvert
+    - asciicheck
+    - exhaustive
+    - copyloopvar
+    - modernize
+    - depguard
+    - forbidigo
+    - gochecknoglobals
+    - gochecknoinits
+    - goconst
+    - whitespace
+    - gocritic
+    - godox
+    - goprintffuncname
+    - govet
+    - unused
+    - lll
+    - makezero
+    - misspell
+    - nilnil
+    - noctx
+    - staticcheck
+    - predeclared
+    - unparam
+    - ineffassign
+    - dupl
+    - gocyclo
+    - gocognit
+  settings:
+    lll:
+      line-length: 156
+    gocyclo:
+      min-complexity: 30
+    gocognit:
+      min-complexity: 30
+    dogsled:
+      max-blank-identifiers: 2
+    depguard:
+      rules:
+        # The dependency set is closed. Anything outside this list is a
+        # defect. Add a dependency by editing this list in the same change.
+        dependencies:
+          list-mode: strict
+          files:
+            - $all
+          allow:
+            - $gostd
+            - github.com/altessa-s/rmcloud-go
+            # The notification socket. Only internal/adapter/ws imports it.
+            - github.com/coder/websocket
+            # Foundation: errors, retry, clock, singleflight, leak checks.
+            - github.com/altessa-s/go-atlas-core
+            # The HTTP client stack. Only adapters import it.
+            - github.com/altessa-s/go-atlas-net
+            # TLS client configuration. Only adapters import it.
+            - github.com/altessa-s/go-tlsutils
+        # Production code decodes with encoding/json/v2, which refuses
+        # duplicate keys, invalid UTF-8, and keys in another case. The v1
+        # package accepts all three. Tests build fixtures with either.
+        json-v2-only:
+          files:
+            - $all
+            - "!$test"
+          deny:
+            - pkg: encoding/json$
+              desc: use encoding/json/v2; v1 accepts duplicate keys and invalid UTF-8
+        # The doubles and test helpers stay out of production code.
+        test-helpers-only-in-tests:
+          files:
+            - $all
+            - "!$test"
+          deny:
+            - pkg: github.com/altessa-s/rmcloud-go/internal/porttest
+              desc: test doubles are for tests
+            - pkg: github.com/altessa-s/rmcloud-go/internal/domaintest
+              desc: test helpers are for tests
+        # The rules below mirror architecture_test.go, which also gates tests.
+        # domain is the protocol's pure types: no I/O, no logging, no network,
+        # and nothing else from this module.
+        domain-is-pure:
+          files:
+            - "**/internal/domain/*.go"
+          deny:
+            - pkg: github.com/altessa-s/rmcloud-go
+              desc: domain imports nothing from this module
+            - pkg: os
+              desc: domain performs no I/O; files come through port.Files
+            - pkg: syscall
+              desc: domain performs no I/O; the host version comes from internal/adapter/fs
+            - pkg: log/slog
+              desc: domain returns what it would log; the caller logs it
+            - pkg: net/http
+              desc: domain knows statuses, not the HTTP client
+            - pkg: github.com/altessa-s/go-atlas-net
+              desc: the HTTP client stack is an adapter's business
+            - pkg: github.com/altessa-s/go-tlsutils
+              desc: TLS configuration is an adapter's business
+        # port declares contracts and imports nothing but domain.
+        port-is-contracts:
+          files:
+            - "**/internal/port/*.go"
+          deny:
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/discovery
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/httpapi
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/notify
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/retry
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/syncstore
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/fs
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/auth
+              desc: port imports nothing from this module but domain
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/ws
+              desc: port imports nothing from this module but domain
+            - pkg: os
+              desc: port holds no implementation
+            - pkg: net/http
+              desc: port holds no implementation
+            - pkg: github.com/altessa-s/go-atlas-net
+              desc: the HTTP client stack is an adapter's business
+            - pkg: github.com/altessa-s/go-tlsutils
+              desc: TLS configuration is an adapter's business
+        # The use cases reach the outside world only through ports. The
+        # composition root hands them every adapter.
+        use-cases-see-only-ports:
+          files:
+            - "**/internal/app/auth/*.go"
+            - "**/internal/app/syncstore/*.go"
+            - "**/internal/app/notify/*.go"
+            - "**/internal/app/discovery/*.go"
+            - "**/internal/app/retry/*.go"
+          deny:
+            - pkg: net/http
+              desc: use cases take port requests and perform no HTTP; statuses are in domain
+            - pkg: os
+              desc: use cases reach files through port.Files
+            - pkg: github.com/coder/websocket
+              desc: the socket is an adapter in internal/adapter/ws
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/httpapi
+              desc: an adapter is wired by the composition root, not imported
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/ws
+              desc: an adapter is wired by the composition root, not imported
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/fs
+              desc: an adapter is wired by the composition root, not imported
+            - pkg: github.com/altessa-s/rmcloud-go/internal/adapter/neterr
+              desc: naming network failures is the adapters' business
+            - pkg: github.com/altessa-s/go-atlas-net
+              desc: the HTTP client stack is an adapter's business
+            - pkg: github.com/altessa-s/go-tlsutils
+              desc: TLS configuration is an adapter's business
+        # Adapters implement ports and know nothing of the use cases.
+        adapters-know-no-use-case:
+          files:
+            - "**/internal/adapter/httpapi/*.go"
+            - "**/internal/adapter/ws/*.go"
+            - "**/internal/adapter/fs/*.go"
+            - "**/internal/porttest/*.go"
+            - "**/internal/domaintest/*.go"
+            - "**/internal/adapter/neterr/*.go"
+          deny:
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/auth
+              desc: adapters implement ports and import no use case
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/syncstore
+              desc: adapters implement ports and import no use case
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/notify
+              desc: adapters implement ports and import no use case
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/discovery
+              desc: adapters implement ports and import no use case
+            - pkg: github.com/altessa-s/rmcloud-go/internal/app/retry
+              desc: adapters implement ports and import no use case
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^time\.Now$
+          msg: time comes from clock.Clock; the composition root passes clock.Real()
+        # Matched on the package path, so crypto/rand — which exposes the same
+        # identifiers — stays allowed.
+        - pattern: ^rand\.
+          pkg: ^math/rand(/v2)?$
+          msg: randomness comes from crypto/rand
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    exhaustive:
+      default-signifies-exhaustive: true
+      package-scope-only: false
+    goconst:
+      min-len: 3
+      match-constant: true
+      numbers: true
+    staticcheck:
+      checks: ["all", "-ST1003"]
+    mnd:
+      ignored-functions:
+        - strings.SplitN
+        - strconv.*
+        - make
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    makezero:
+      always: false
+    misspell:
+      locale: US
+    varnamelen:
+      ignore-type-assert-ok: true
+      ignore-map-index-ok: true
+      ignore-chan-recv-ok: true
+      ignore-names:
+        - err
+        - ch
+        - ok
+      ignore-decls:
+        - i int
+        - ch chan
+  exclusions:
+    generated: lax
+    paths:
+      - ".*_test\\.go"
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(google.golang.org)
+        - prefix(golang.org)
+        - prefix(github.com/altessa-s/go-atlas-core)
+        - prefix(github.com/altessa-s/go-atlas-net)
+        - prefix(github.com/altessa-s/rmcloud-go)
+        - prefix(github.com/altessa-s)
+        - blank
+        - alias

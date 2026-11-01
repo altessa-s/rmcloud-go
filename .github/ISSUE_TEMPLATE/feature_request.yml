@@ -1,0 +1,69 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for rmcloud-go
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please fill out the sections below.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: A clear description of the problem this feature would solve.
+      placeholder: "I'm always frustrated when ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like, including API sketches if applicable.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected Package
+      description: Which package would this feature belong to?
+      options:
+        - (root) rmcloud
+        - internal/domain
+        - internal/port
+        - internal/app/auth
+        - internal/app/discovery
+        - internal/app/notify
+        - internal/app/retry
+        - internal/app/syncstore
+        - internal/adapter/httpapi
+        - internal/adapter/ws
+        - internal/adapter/fs
+        - internal/adapter/neterr
+        - internal/wiring
+        - internal/porttest
+        - internal/domaintest
+        - devtools
+        - ci
+        - new package
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, references, or screenshots.
+    validations:
+      required: false
