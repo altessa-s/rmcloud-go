@@ -277,6 +277,7 @@ Time in tests is `porttest.Clock`, which records each sleep over go-atlas-core's
 - **[rmlines-lib](https://github.com/altessa-s/rmlines-lib)** — the `.rm` v6 page format as a C23 library.
 - **[rmlines-swift](https://github.com/altessa-s/rmlines-swift)** — the same page format as a Swift package.
 - **[rmdoc-swift](https://github.com/altessa-s/rmdoc-swift)** — the `.rmdoc` container as a Swift package.
+- **[rmdoc-lib](https://github.com/altessa-s/rmdoc-lib)** — the `.rmdoc` container as a portable C23 library.
 - **[rmmarks-lib](https://github.com/altessa-s/rmmarks-lib)**, **[rmmarks-go](https://github.com/altessa-s/rmmarks-go)** and
   **[rmmarks-swift](https://github.com/altessa-s/rmmarks-swift)** — geometry for marked text: where a highlight lies on a page and which words it covers.
 - **[rmrender-swift](https://github.com/altessa-s/rmrender-swift)** — drawing reMarkable notebooks into PDF or images, from Swift.
