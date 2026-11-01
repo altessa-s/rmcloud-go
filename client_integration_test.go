@@ -585,9 +585,9 @@ func TestIntegration_DeadlineMidRequest(t *testing.T) {
 		return true
 	})
 
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(t.Context(), deadline)
 	defer cancel()
-	start := time.Now()
 	_, err := c.Root(ctx)
 	elapsed := time.Since(start)
 	if !errors.Is(err, context.DeadlineExceeded) {
