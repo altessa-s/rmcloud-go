@@ -45,6 +45,7 @@ A new [Error] kind is a breaking change for every caller that switches on
 | `func IsServerError(status int) bool` |
 | `func IsSuccess(status int) bool` |
 | `func IsUsable(expiry, heldSince *time.Time, moment time.Time) bool` |
+| `func IssuedAt(token string) *time.Time` |
 | `func LimitFor(declared int64) int64` |
 | `func NodeHash(entries []Entry) (string, error)` |
 | `func NotificationsOn(host url.URL) url.URL` |

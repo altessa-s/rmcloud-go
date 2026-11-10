@@ -110,6 +110,26 @@ func TestDeviceIDAndExpiry(t *testing.T) {
 	}
 }
 
+func TestIssuedAt(t *testing.T) {
+	whole := IssuedAt(jwtToken(t, map[string]any{"iat": 1_700_000_000}))
+	if want := time.Unix(1_700_000_000, 0); whole == nil || !whole.Equal(want) {
+		t.Fatalf("iat = %v want %v", whole, want)
+	}
+	frac := IssuedAt(jwtToken(t, map[string]any{"iat": 1_700_000_000.5}))
+	if want := time.Unix(1_700_000_000, 500_000_000); frac == nil || !frac.Equal(want) {
+		t.Fatalf("fractional iat = %v want %v", frac, want)
+	}
+	if got := IssuedAt(jwtToken(t, map[string]any{"exp": 1})); got != nil {
+		t.Fatalf("a token without iat was issued at %v", got)
+	}
+	if got := IssuedAt(jwtToken(t, map[string]any{"iat": "1700000000"})); got != nil {
+		t.Fatalf("a string iat was read as %v", got)
+	}
+	if got := IssuedAt("not-a-token"); got != nil {
+		t.Fatalf("an unreadable token was issued at %v", got)
+	}
+}
+
 func TestIsUsable(t *testing.T) {
 	moment := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	exactMargin := moment.Add(ExpiryMargin)
