@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 
 	"github.com/altessa-s/go-atlas-core/errors/network"
 
@@ -20,10 +21,16 @@ import (
 
 // Classify maps a transport failure onto a protocol error.
 //
-// A canceled or expired context is returned as that context error. A body
-// cut short is a lost connection; a failed TLS handshake is a failed secure
-// connection. Anything this function does not recognize is returned
-// unchanged, including the ten-redirect stop.
+// A canceled or expired context is returned as that context error. A
+// deadline that passed while ctx is still alive is not the caller's: it is
+// a timer inside the transport, such as net/http's wait for response
+// headers, which reports itself as a deadline. That is a timeout, which the
+// retry policy repeats. Without a ctx to ask, a deadline stays a deadline.
+//
+// A body cut short is a lost connection, and so is an HTTP/2 connection
+// closed because its ping went unanswered; a failed TLS handshake is a
+// failed secure connection. Anything this function does not recognize is
+// returned unchanged, including the ten-redirect stop.
 func Classify(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -37,6 +44,9 @@ func Classify(ctx context.Context, err error) error {
 		return context.Canceled
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
+		if ctx != nil {
+			return domain.Transport(domain.ReasonTimedOut)
+		}
 		return context.DeadlineExceeded
 	}
 	if dns, ok := errors.AsType[*net.DNSError](err); ok {
@@ -67,7 +77,33 @@ func Classify(ctx context.Context, err error) error {
 	if network.IsRequestTimeoutError(err) {
 		return domain.Transport(domain.ReasonTimedOut)
 	}
+	if isHTTP2ConnectionLost(err) {
+		return domain.Transport(domain.ReasonNetworkConnectionLost)
+	}
 	return err
+}
+
+// http2ConnectionLost is how net/http words the failure of every request on
+// an HTTP/2 connection it closed because a health ping went unanswered. It
+// exports neither a value nor a type for it, so the text is all there is to
+// recognize; an integration test of package httpapi holds the wording.
+const http2ConnectionLost = "http2: client connection lost"
+
+// isHTTP2ConnectionLost looks for that failure at the root of err. The
+// wrappers above it are asked one layer at a time: one that redacts its
+// message still unwraps to the cause.
+func isHTTP2ConnectionLost(err error) bool {
+	for err != nil {
+		switch wrapper := err.(type) { //nolint:errorlint // the chain is walked one layer at a time
+		case interface{ Unwrap() error }:
+			err = wrapper.Unwrap()
+		case interface{ Unwrap() []error }:
+			return slices.ContainsFunc(wrapper.Unwrap(), isHTTP2ConnectionLost)
+		default:
+			return err.Error() == http2ConnectionLost
+		}
+	}
+	return false
 }
 
 // The Winsock numbers errnoCode reports. Unix constants differ by OS; these

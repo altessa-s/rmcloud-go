@@ -27,6 +27,23 @@ func (timeoutNetError) Error() string   { return "i/o timeout" }
 func (timeoutNetError) Timeout() bool   { return true }
 func (timeoutNetError) Temporary() bool { return true }
 
+// headerTimeoutError has the shape of net/http's HTTP/1.1 wait for response
+// headers running out: a timeout that answers to context.DeadlineExceeded
+// without being a context's error.
+type headerTimeoutError struct{}
+
+func (headerTimeoutError) Error() string     { return "net/http: timeout awaiting response headers" }
+func (headerTimeoutError) Timeout() bool     { return true }
+func (headerTimeoutError) Temporary() bool   { return true }
+func (headerTimeoutError) Is(err error) bool { return err == context.DeadlineExceeded } //nolint:errorlint // as net/http does
+
+// redactingError hides its cause's text and still unwraps to it, as an
+// HTTP client that redacts transport errors does.
+type redactingError struct{ cause error }
+
+func (redactingError) Error() string   { return "transport error (redacted)" }
+func (e redactingError) Unwrap() error { return e.cause }
+
 func TestClassify(t *testing.T) {
 	t.Parallel()
 
@@ -40,13 +57,16 @@ func TestClassify(t *testing.T) {
 	plainURL := &url.Error{Op: "Get", URL: "https://h.example/x", Err: errors.New("nope")}
 	redirectURL := &url.Error{Op: "Get", URL: "https://h10.example/x", Err: errors.New("stopped after 10 redirects")}
 	bareEINVAL := error(syscall.EINVAL)
+	lostLookalike := fmt.Errorf("http2: client connection lost: %w", errors.New("nope"))
 
 	tests := []struct {
 		name string
 		ctx  context.Context
-		err  error
-		want domain.Error
-		same error
+		// noCtx classifies with a nil context instead of a live one.
+		noCtx bool
+		err   error
+		want  domain.Error
+		same  error
 	}{
 		{
 			name: "cancelled context wins over refused",
@@ -61,7 +81,61 @@ func TestClassify(t *testing.T) {
 			same: context.DeadlineExceeded,
 		},
 		{name: "canceled sentinel", err: context.Canceled, same: context.Canceled},
-		{name: "deadline sentinel", err: context.DeadlineExceeded, same: context.DeadlineExceeded},
+		{name: "deadline sentinel without a context", noCtx: true, err: context.DeadlineExceeded, same: context.DeadlineExceeded},
+		{
+			name: "deadline under a live context is the transport's timer",
+			err:  context.DeadlineExceeded,
+			want: domain.Transport(domain.ReasonTimedOut),
+		},
+		{
+			name: "response header timeout",
+			err:  &url.Error{Op: "Get", URL: "https://h.example/x", Err: headerTimeoutError{}},
+			want: domain.Transport(domain.ReasonTimedOut),
+		},
+		{
+			name: "response header timeout after the caller's deadline",
+			ctx:  expired,
+			err:  &url.Error{Op: "Get", URL: "https://h.example/x", Err: headerTimeoutError{}},
+			same: context.DeadlineExceeded,
+		},
+		{
+			name: "response header timeout after the caller left",
+			ctx:  canceled,
+			err:  &url.Error{Op: "Get", URL: "https://h.example/x", Err: headerTimeoutError{}},
+			same: context.Canceled,
+		},
+		{
+			name: "http2 response header timeout",
+			err:  &url.Error{Op: "Get", URL: "https://h.example/x", Err: timeoutNetError{}},
+			want: domain.Transport(domain.ReasonTimedOut),
+		},
+		{
+			name: "http2 connection closed by an unanswered ping",
+			err:  &url.Error{Op: "Get", URL: "https://h.example/x", Err: errors.New("http2: client connection lost")},
+			want: domain.Transport(domain.ReasonNetworkConnectionLost),
+		},
+		{
+			name: "http2 connection lost while reading a body",
+			err:  errors.New("http2: client connection lost"),
+			want: domain.Transport(domain.ReasonNetworkConnectionLost),
+		},
+		{
+			name: "http2 connection lost under a wrapper that redacts its message",
+			err:  redactingError{cause: errors.New("http2: client connection lost")},
+			want: domain.Transport(domain.ReasonNetworkConnectionLost),
+		},
+		{
+			name: "http2 connection lost among joined errors",
+			err:  errors.Join(errors.New("other"), fmt.Errorf("stream: %w", errors.New("http2: client connection lost"))),
+			want: domain.Transport(domain.ReasonNetworkConnectionLost),
+		},
+		{name: "the wording alone in a wrapper is not the failure", err: lostLookalike, same: lostLookalike},
+		{
+			name: "http2 connection lost after the caller left",
+			ctx:  canceled,
+			err:  errors.New("http2: client connection lost"),
+			same: context.Canceled,
+		},
 		{
 			name: "dns not found",
 			err:  &net.DNSError{Err: "no such host", Name: "h.example", IsNotFound: true, IsTimeout: true},
@@ -135,10 +209,10 @@ func TestClassify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := tt.ctx
-			if ctx == nil {
+			if ctx == nil && !tt.noCtx {
 				ctx = context.Background()
 			}
-			got := Classify(ctx, tt.err)
+			got := Classify(ctx, tt.err) //nolint:staticcheck // a nil context is a case Classify documents
 			if tt.same != nil {
 				if !errors.Is(got, tt.same) {
 					t.Fatalf("got %v (%T), want the original %v", got, got, tt.same)
@@ -148,8 +222,8 @@ func TestClassify(t *testing.T) {
 			if !domaintest.SameError(got, tt.want) {
 				t.Fatalf("got %+v, want %+v", got, tt.want)
 			}
-			if tt.name == "poll deadline" && errors.Is(got, context.DeadlineExceeded) {
-				t.Fatal("mapped timeout is not the context deadline")
+			if errors.Is(got, context.DeadlineExceeded) || errors.Is(got, context.Canceled) {
+				t.Fatal("a mapped failure is not the context's error")
 			}
 		})
 	}

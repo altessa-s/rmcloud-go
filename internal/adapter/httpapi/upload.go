@@ -19,8 +19,16 @@ import (
 // when set, sees the bytes of File as they are handed to the connection,
 // against the file's size; a body that is sent again after a redirect
 // counts from zero again.
+//
+// Sending is not timed: a slow upload that the peer keeps accepting is
+// never cut, and a dead HTTP/2 connection is found by its ping. Once the
+// body is written the upload client waits for the response headers, longer
+// than the other clients do, and the response body is read as RoundTrip
+// reads it.
 func (t *Transport) Upload(ctx context.Context, req port.Request) (port.Response, error) {
-	httpReq, err := newRequest(ctx, req)
+	reqCtx, stall := context.WithCancelCause(ctx)
+	defer stall(nil)
+	httpReq, err := newRequest(reqCtx, req)
 	if err != nil {
 		return port.Response{}, err
 	}
@@ -59,11 +67,11 @@ func (t *Transport) Upload(ctx context.Context, req port.Request) (port.Response
 	} else {
 		setMemoryBody(httpReq, req.Body)
 	}
-	resp, snap, method, err := t.do(ctx, t.memory, httpReq, nil, true) //nolint:bodyclose // readMemory closes it
+	resp, snap, method, err := t.do(ctx, t.upload, httpReq, nil, true) //nolint:bodyclose // readMemory closes it
 	if err != nil {
 		return port.Response{}, err
 	}
-	return t.readMemory(ctx, resp, snap, method)
+	return t.readMemory(ctx, resp, snap, method, stall)
 }
 
 // uploadFile is a file an upload body reads. Close closes it once; a later

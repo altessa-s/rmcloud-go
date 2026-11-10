@@ -64,6 +64,13 @@ default.
   HTTPS is accepted anywhere and HTTP only on the loopback. A refused value leaves its host alone and is named in the error, never quoted.
 - HTTP goes through go-atlas-net clients: a circuit breaker per host, and transport errors with their URLs and unknown messages redacted. The
   clients never retry; the protocol does, because only it knows which calls may repeat.
+- No request has a deadline of its own; the caller's context is the only overall limit. What is bounded is a request that stopped moving:
+  response headers that do not come within 60 s of the request being written (5 min after a file upload), a body read into memory that brings
+  no byte for 45 s, and an HTTP/2 connection that leaves a ping unanswered, which is found in about 30 s. Each fails as a `*TransportError`
+  (`ReasonTimedOut`, or `ReasonNetworkConnectionLost` for the ping) and is retried; a transfer that is slow but alive is never cut. A
+  round tripper from `WithRoundTripper` keeps its own header wait and pings.
+- A user token is judged in the server's time: the `iat` of each token bought shows how far the local clock stands from the server's, so a
+  machine whose clock is hours off keeps and reuses its token. A difference past five minutes is logged as a warning.
 - Against the production hosts the clients refuse to dial private and loopback addresses. Other endpoints, a resolver, or a round tripper turn
   that guard off, so a server on the caller's own network stays reachable. The notification socket has no guard of its own: its host is the
   configured one or one discovery published for a trusted reMarkable domain.
@@ -141,7 +148,8 @@ invalid UTF-8, or a field name in another case is a `*MalformedResponseError`.
 A 409 or 412 on `PutRoot` is `KindRootConflict`: the caller re-reads and rebuilds. `PutRoot` repeats a rate limit and nothing else, since a write
 that may have landed is not sent again blind. The other calls retry 5xx, network failures and rate limits on go-atlas-core's retry loop (three
 attempts from 300 ms, growing threefold to a 20 s ceiling, up to a fifth added as jitter; a server's `Retry-After` wins), and fetch a fresh user
-token once on a 401. A body cut short is a lost connection (`ReasonNetworkConnectionLost`) and is retried like one. An open circuit breaker
+token once on a 401. A body cut short is a lost connection (`ReasonNetworkConnectionLost`) and is retried like one, and so is a
+request that stopped moving (`ReasonTimedOut`); the caller's own cancellation or deadline is returned as it is and never retried. An open circuit breaker
 (`ReasonCircuitOpen`), a dial the SSRF guard refused (`ReasonBlocked`), and a failed TLS handshake such as an untrusted certificate
 (`ReasonSecureConnectionFailed`) are not retried. Concurrent callers share one user-token exchange and one discovery call.
 
