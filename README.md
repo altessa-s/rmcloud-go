@@ -28,7 +28,7 @@ It is built on these altessa-s modules:
 ## Installing
 
 ```sh
-go get github.com/altessa-s/rmcloud-go@v1.0.0
+go get github.com/altessa-s/rmcloud-go@v1.0.1
 ```
 
 ```go
