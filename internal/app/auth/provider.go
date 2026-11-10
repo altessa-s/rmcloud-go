@@ -7,6 +7,7 @@ package auth
 import (
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/altessa-s/go-atlas-core/runtime/singleflight"
 	"github.com/altessa-s/go-atlas-core/time/clock"
@@ -20,8 +21,8 @@ import (
 //
 // Methods are safe to call together. Two locks split the work:
 //
-//   - mu guards what this process remembers: the cache and the registration
-//     session. It is never held across a
+//   - mu guards what this process remembers: the cache, the registration
+//     session and the measured clock skew. It is never held across a
 //     call to the secret store or the network, so a cache hit and an
 //     invalidation never wait on a slow store.
 //   - storeMu serializes the compound store writes: registering, forgetting,
@@ -41,6 +42,10 @@ type Provider struct {
 	mu      sync.Mutex
 	session uint64
 	cache   userTokenCache
+	// skew is the local clock less the server's, positive when the local
+	// clock is ahead, as the last user token bought in this process showed
+	// it. Nil until one has been bought. See [Provider.noteClockSkew].
+	skew *time.Duration
 
 	// buys shares one user-token buy per registration session among the
 	// callers that want one. Forgetting the device moves the session, so
@@ -55,7 +60,8 @@ type Provider struct {
 // panics here. The default User-Agent is none; the composition root sets it.
 //
 // secrets holds the device and user tokens, trip carries the token calls,
-// and clk judges expiry and waits between retries.
+// and clk judges expiry and waits between retries. Expiry is judged in the
+// server's time once a bought token has shown how far clk stands from it.
 func New(secrets port.SecretStore, trip port.RoundTripper, clk clock.Clock, opts ...Option) *Provider {
 	switch {
 	case secrets == nil:

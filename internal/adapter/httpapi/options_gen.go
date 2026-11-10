@@ -9,10 +9,21 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"time"
 )
 
 // Option is a functional option for configuring options.
 type Option func(o *options)
+
+// WithIdleReadTimeout sets the idleReadTimeout option.
+func WithIdleReadTimeout(v time.Duration) Option {
+	return func(o *options) {
+		if v <= 0 {
+			return
+		}
+		o.idleReadTimeout = v
+	}
+}
 
 // WithLevel sets the level option.
 func WithLevel(v Level) Option {
@@ -28,6 +39,36 @@ func WithLogger(v *slog.Logger) Option {
 			return
 		}
 		o.log = v
+	}
+}
+
+// WithPingAfter sets the pingAfter option.
+func WithPingAfter(v time.Duration) Option {
+	return func(o *options) {
+		if v <= 0 {
+			return
+		}
+		o.pingAfter = v
+	}
+}
+
+// WithPingTimeout sets the pingTimeout option.
+func WithPingTimeout(v time.Duration) Option {
+	return func(o *options) {
+		if v <= 0 {
+			return
+		}
+		o.pingTimeout = v
+	}
+}
+
+// WithResponseHeaderTimeout sets the responseHeaderTimeout option.
+func WithResponseHeaderTimeout(v time.Duration) Option {
+	return func(o *options) {
+		if v <= 0 {
+			return
+		}
+		o.responseHeaderTimeout = v
 	}
 }
 
@@ -64,6 +105,16 @@ func WithoutSSRFProtection() Option {
 	}
 }
 
+// WithUploadResponseHeaderTimeout sets the uploadResponseHeaderTimeout option.
+func WithUploadResponseHeaderTimeout(v time.Duration) Option {
+	return func(o *options) {
+		if v <= 0 {
+			return
+		}
+		o.uploadResponseHeaderTimeout = v
+	}
+}
+
 // WithWireWriter sets the wireWriter option.
 func WithWireWriter(v io.Writer) Option {
 	return func(o *options) {
@@ -82,7 +133,12 @@ func WithWireWriter(v io.Writer) Option {
 // defaultOptions returns the default values for options.
 func defaultOptions() *options {
 	return &options{
-		log: slog.Default(),
+		idleReadTimeout:             defaultIdleReadTimeout,
+		log:                         slog.Default(),
+		pingAfter:                   defaultPingAfter,
+		pingTimeout:                 defaultPingTimeout,
+		responseHeaderTimeout:       defaultResponseHeaderTimeout,
+		uploadResponseHeaderTimeout: defaultUploadResponseHeaderTimeout,
 	}
 }
 

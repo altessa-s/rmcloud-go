@@ -22,6 +22,19 @@ func Expiry(token string) *time.Time {
 	return parseExp(claims.Exp)
 }
 
+// IssuedAt is the token's iat claim, or nil when the token does not parse or
+// has no numeric iat. It is the issuing server's clock at the moment the
+// token was made, read in the same shapes as exp.
+func IssuedAt(token string) *time.Time {
+	claims := claimsOf[struct {
+		Iat any `json:"iat"`
+	}](token)
+	if claims == nil {
+		return nil
+	}
+	return parseExp(claims.Iat)
+}
+
 // parseExp accepts the numeric shapes a test or a decoder may hand in.
 // JSON objects decoded into map[string]any spell numbers as float64.
 // A fractional second is kept. A negative fraction is normalised so the
