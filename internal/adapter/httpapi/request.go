@@ -51,9 +51,9 @@ func (t *Transport) readMemory(
 		resp.Body = io.NopCloser(bytes.NewReader(nil))
 	}
 	defer func() { _ = resp.Body.Close() }()
-	watch := watchIdle(t.idleReadTimeout, stall)
+	watch := watchIdle(resp.Body, t.idleReadTimeout, stall)
 	defer watch.stop()
-	body, err := readLimited(idleReader{src: resp.Body, watch: watch}, memoryLimit, resp.ContentLength)
+	body, err := readLimited(watch, memoryLimit, resp.ContentLength)
 	if errors.Is(err, errTooBig) {
 		// The count is the ceiling plus one, as copyLimited reports it.
 		n := memoryLimit + 1
