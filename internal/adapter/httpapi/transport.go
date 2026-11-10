@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/altessa-s/go-tlsutils"
 
@@ -18,15 +19,24 @@ import (
 	"github.com/altessa-s/rmcloud-go/internal/port"
 )
 
-// Transport is the net/http adapter. RoundTrip and Upload share one client.
-// Download uses another, capped at six connections per host, so a large
-// file cannot occupy every slot the metadata calls need.
+// Transport is the net/http adapter. RoundTrip, Upload and Download each
+// have a client. Download's is capped at six connections per host, so a
+// large file cannot occupy every slot the metadata calls need. Upload's
+// waits longer for the response headers: see the bounds in options.go.
+//
+// No client has a deadline for a whole request. What is bounded is a
+// request that stopped moving: headers that never come, an in-memory body
+// that stalls, and an HTTP/2 connection that no longer answers a ping. Each
+// is a transport error the retry policy repeats. The caller's context is
+// the only overall limit, and its end is returned as it is.
 type Transport struct {
 	memory   *http.Client
+	upload   *http.Client
 	download *http.Client
-	// memBase and dlBase are the pooled transports beneath the clients
-	// when the host supplied no round tripper.
+	// memBase, upBase and dlBase are the pooled transports beneath the
+	// clients when the host supplied no round tripper.
 	memBase *http.Transport
+	upBase  *http.Transport
 	dlBase  *http.Transport
 	wire    wire
 
@@ -35,7 +45,7 @@ type Transport struct {
 
 // New builds a transport. The wire log is off unless WithLevel turns it on.
 //
-// Both clients are go-atlas-net clients without retries: the use cases
+// The clients are go-atlas-net clients without retries: the use cases
 // decide what to repeat. A circuit breaker per host stops a dead host from
 // being dialed again and again, transport errors have their URLs redacted,
 // and, unless [WithoutSSRFProtection], a dial to a private or loopback
@@ -47,8 +57,9 @@ func New(opts ...Option) *Transport {
 	if t.wire.writer == nil {
 		t.wire.writer = slogDebugWriter{log: t.logger}
 	}
-	t.memBase, t.dlBase = baseTransports(t.roots)
+	t.memBase, t.upBase, t.dlBase = t.baseTransports()
 	t.memory = t.client(t.memBase)
+	t.upload = t.client(t.upBase)
 	t.download = t.client(t.dlBase)
 	return t
 }
@@ -73,25 +84,42 @@ func (t *Transport) client(base *http.Transport) *http.Client {
 
 func (t *Transport) logger() *slog.Logger { return t.log }
 
-// CloseIdleConnections closes the idle connections of both clients. A call
+// CloseIdleConnections closes the idle connections of every client. A call
 // in progress is not interrupted.
 func (t *Transport) CloseIdleConnections() {
 	t.memory.CloseIdleConnections()
+	t.upload.CloseIdleConnections()
 	t.download.CloseIdleConnections()
 }
 
 // baseTransports are go-atlas-net pooled transports with go-tlsutils'
-// client TLS: TLS 1.2 or later with its curated cipher suites.
-func baseTransports(roots *x509.CertPool) (memory, download *http.Transport) {
-	memory = pooled(roots)
-	download = pooled(roots)
+// client TLS: TLS 1.2 or later with its curated cipher suites. Each gives
+// up on a request that stopped moving.
+func (t *Transport) baseTransports() (memory, upload, download *http.Transport) {
+	memory = t.bounded(t.responseHeaderTimeout)
+	upload = t.bounded(t.uploadResponseHeaderTimeout)
+	download = t.bounded(t.responseHeaderTimeout)
 	download.MaxConnsPerHost = downloadConnsPerHost
-	return memory, download
+	return memory, upload, download
+}
+
+// bounded is a pooled transport that waits headerTimeout for the response
+// headers of a request it has written, and pings an HTTP/2 connection that
+// has gone silent. net/http starts the header wait only once the request
+// body is written, so the time an upload takes to send is not counted. A
+// connection whose ping goes unanswered is closed, which fails every
+// request on it; a slow peer that answers keeps its connection.
+func (t *Transport) bounded(headerTimeout time.Duration) *http.Transport {
+	tr := pooled(t.roots)
+	tr.ResponseHeaderTimeout = headerTimeout
+	tr.HTTP2 = &http.HTTP2Config{SendPingTimeout: t.pingAfter, PingTimeout: t.pingTimeout}
+	return tr
 }
 
 // Pooled is the transport the clients start from, for a caller that needs
 // the same TLS on a connection of its own, such as the notification socket.
-// Nil roots use the system pool.
+// Nil roots use the system pool. It has none of the clients' bounds: the
+// socket is long-lived and keeps itself alive.
 func Pooled(roots *x509.CertPool) *http.Transport { return pooled(roots) }
 
 func pooled(roots *x509.CertPool) *http.Transport {
@@ -121,8 +149,11 @@ var _ port.Transport = (*Transport)(nil)
 
 // RoundTrip performs the call and keeps the body in memory, up to 32 MiB.
 // File is ignored. A non-2xx status is still a response; the caller decides.
+// A body that stops arriving fails as a timeout.
 func (t *Transport) RoundTrip(ctx context.Context, req port.Request) (port.Response, error) {
-	httpReq, err := newRequest(ctx, req)
+	reqCtx, stall := context.WithCancelCause(ctx)
+	defer stall(nil)
+	httpReq, err := newRequest(reqCtx, req)
 	if err != nil {
 		return port.Response{}, err
 	}
@@ -131,5 +162,5 @@ func (t *Transport) RoundTrip(ctx context.Context, req port.Request) (port.Respo
 	if err != nil {
 		return port.Response{}, err
 	}
-	return t.readMemory(ctx, resp, snap, method)
+	return t.readMemory(ctx, resp, snap, method, stall)
 }

@@ -40,12 +40,20 @@ func (t *Transport) do(
 	return resp, snap, method, nil
 }
 
-func (t *Transport) readMemory(ctx context.Context, resp *http.Response, snap *url.URL, method string) (port.Response, error) {
+// readMemory reads the body into memory. stall cancels the request, whose
+// context is a child of ctx: a body that brings no byte for the idle read
+// timeout is canceled through it and fails as a timeout. ctx is the
+// caller's, and its end is returned as it is.
+func (t *Transport) readMemory(
+	ctx context.Context, resp *http.Response, snap *url.URL, method string, stall context.CancelCauseFunc,
+) (port.Response, error) {
 	if resp.Body == nil {
 		resp.Body = io.NopCloser(bytes.NewReader(nil))
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := readLimited(resp.Body, memoryLimit, resp.ContentLength)
+	watch := watchIdle(t.idleReadTimeout, stall)
+	defer watch.stop()
+	body, err := readLimited(idleReader{src: resp.Body, watch: watch}, memoryLimit, resp.ContentLength)
 	if errors.Is(err, errTooBig) {
 		// The count is the ceiling plus one, as copyLimited reports it.
 		n := memoryLimit + 1
@@ -55,6 +63,12 @@ func (t *Transport) readMemory(ctx context.Context, resp *http.Response, snap *u
 		return port.Response{}, domain.OversizedResponse(n, memoryLimit)
 	}
 	if err != nil {
+		if watch.expired.Load() && ctx.Err() == nil {
+			// The read failed because the watch canceled it. The error in
+			// hand is a cancellation, which would read as the caller's.
+			t.wire.failed(method, snap, errIdleRead.Error())
+			return port.Response{}, domain.Transport(domain.ReasonTimedOut)
+		}
 		return t.fail(ctx, method, snap, err)
 	}
 	finalURL, finalMethod := finalHop(resp, snap, method)

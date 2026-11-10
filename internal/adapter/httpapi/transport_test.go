@@ -133,24 +133,31 @@ func waitErr(t *testing.T, ch <-chan error) error {
 func TestTransportClients(t *testing.T) {
 	t.Parallel()
 	tr := New(WithLevel(LevelOff))
-	if tr.memory == nil || tr.download == nil || tr.memory == tr.download {
-		t.Fatalf("clients memory %p download %p", tr.memory, tr.download)
+	if tr.memory == nil || tr.upload == nil || tr.download == nil ||
+		tr.memory == tr.download || tr.memory == tr.upload || tr.upload == tr.download {
+		t.Fatalf("clients memory %p upload %p download %p", tr.memory, tr.upload, tr.download)
 	}
-	if tr.memory.Timeout != 0 || tr.download.Timeout != 0 {
-		t.Fatalf("timeout memory %s download %s", tr.memory.Timeout, tr.download.Timeout)
+	// No client bounds a whole request: a slow transfer that is alive is
+	// the caller's to stop.
+	if tr.memory.Timeout != 0 || tr.upload.Timeout != 0 || tr.download.Timeout != 0 {
+		t.Fatalf("timeout memory %s upload %s download %s", tr.memory.Timeout, tr.upload.Timeout, tr.download.Timeout)
 	}
-	mem, dl := tr.memBase, tr.dlBase
-	if mem == nil || dl == nil || mem == dl {
+	mem, up, dl := tr.memBase, tr.upBase, tr.dlBase
+	if mem == nil || up == nil || dl == nil || mem == dl || mem == up || up == dl {
 		t.Fatal("round trippers share a pointer")
 	}
-	if mem.MaxConnsPerHost != 0 || dl.MaxConnsPerHost != 6 {
-		t.Fatalf("max conns memory %d download %d", mem.MaxConnsPerHost, dl.MaxConnsPerHost)
+	if mem.MaxConnsPerHost != 0 || up.MaxConnsPerHost != 0 || dl.MaxConnsPerHost != 6 {
+		t.Fatalf("max conns memory %d upload %d download %d", mem.MaxConnsPerHost, up.MaxConnsPerHost, dl.MaxConnsPerHost)
 	}
 
-	var memCalls, dlCalls atomic.Int32
+	var memCalls, upCalls, dlCalls atomic.Int32
 	tr.memory.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		memCalls.Add(1)
 		return httpResp(r, 200, nil, "m"), nil
+	})
+	tr.upload.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		upCalls.Add(1)
+		return httpResp(r, 200, nil, "u"), nil
 	})
 	tr.download.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		dlCalls.Add(1)
@@ -167,8 +174,8 @@ func TestTransportClients(t *testing.T) {
 	if _, err := tr.Download(ctx, port.Request{URL: u, Dest: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
-	if memCalls.Load() != 2 || dlCalls.Load() != 1 {
-		t.Fatalf("memory %d download %d", memCalls.Load(), dlCalls.Load())
+	if memCalls.Load() != 1 || upCalls.Load() != 1 || dlCalls.Load() != 1 {
+		t.Fatalf("memory %d upload %d download %d", memCalls.Load(), upCalls.Load(), dlCalls.Load())
 	}
 
 	silent := New(WithLevel(LevelOff), WithWireWriter(nil))

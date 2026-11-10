@@ -28,6 +28,10 @@ const downloadConnsPerHost = 6
 // Download writes the body to Dest. The ceiling is Limit, or the declared
 // size, or the blob ceiling. A body past that ceiling is removed. Any
 // status is returned with the file; this method does not interpret it.
+//
+// The body has no idle bound: a large file over a slow link may pause for
+// longer than a small read ever should. A dead HTTP/2 connection is found
+// by its ping instead.
 func (t *Transport) Download(ctx context.Context, req port.Request) (port.Response, error) {
 	limit := req.Limit
 	if limit <= 0 {
